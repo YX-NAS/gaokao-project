@@ -1140,15 +1140,14 @@
         var schoolName = item.school || '';
         var majorGroup = item.majorGroup || '';
 
-        // Level filter
+        // Level filter — use item.level field from data
         if (prefs.level.length) {
-          var is985211 = prefs.level.indexOf('985/211') !== -1 &&
-            (schoolName.indexOf('985') !== -1 || schoolName.indexOf('211') !== -1);
-          var isYiben = prefs.level.indexOf('一本') !== -1 &&
-            schLevel(schoolName) === '' && schoolName.indexOf('学院') === -1;
-          var isErben = prefs.level.indexOf('二本') !== -1 &&
-            schoolName.indexOf('学院') !== -1 && schLevel(schoolName) === '';
-          if (!is985211 && !isYiben && !isErben) return false;
+          var itemLevel = item.level || '';
+          var matchLevel = false;
+          if (prefs.level.indexOf('985/211') !== -1 && itemLevel === '985/211') matchLevel = true;
+          if (prefs.level.indexOf('一本') !== -1 && itemLevel === '一本') matchLevel = true;
+          if (prefs.level.indexOf('二本') !== -1 && itemLevel === '二本') matchLevel = true;
+          if (!matchLevel) return false;
         }
 
         // Region filter
@@ -1171,51 +1170,47 @@
       });
     }
 
-    // Wrap original calculateRecommendations
-    var __origCR = window.calculateRecommendations;
-    window.calculateRecommendations = function(score, subjects, data, year) {
-      var prefs = getPreferences();
-      var filteredData = applyPreferences(data, prefs);
-      return __origCR.call(window, score, subjects, filteredData, year);
-    };
+    // ---- Inject preferences into the original data flow ----
+    // The original app.js uses 'historicalData' (a const, not window property).
+    // We read it from app.js text fetched once, then expose via window.
+    (function loadAppJsData() {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', 'src/app.js?_=' + Date.now(), true);
+      xhr.onload = function() {
+        try {
+          var text = xhr.responseText;
+          // Extract the historicalData object
+          var hdMatch = text.match(/const historicalData\s*=\s*(\{[\s\S]*?\n\});?\s*$/m);
+          if (!hdMatch) { console.warn('prefs: historicalData not found'); return; }
+          // Use a safe eval via Function constructor
+          var hd = new Function('return ' + hdMatch[1])();
+          window._histData = hd;
 
-    // Also wrap generateRecommendation (needs filteredData ref for display)
-    var __origGR = window.generateRecommendation;
-    window.generateRecommendation = function() {
-      var score = parseInt(document.getElementById('scoreInput').value) || 0;
-      var chinese = parseInt(document.getElementById('chineseInput').value) || 0;
-      var math = parseInt(document.getElementById('mathInput').value) || 0;
-      var english = parseInt(document.getElementById('englishInput').value) || 0;
-      if (!score) { alert('请输入高考总分'); return; }
-      var totalScore = score;
+          var ssMatch = text.match(/scoreSegments\s*=\s*(\{[\s\S]*?\n\});?\s*$/m);
+          if (ssMatch) {
+            window._scoreSegs = new Function('return ' + ssMatch[1])();
+          }
+        } catch(e) { console.warn('prefs data load error:', e); }
+      };
+      xhr.send();
+    })();
 
-      var selectedSubjects = [];
-      document.querySelectorAll('.subject-tag.selected').forEach(function(t) {
-        selectedSubjects.push(t.dataset.subject);
-      });
-
-      var year = parseInt(document.getElementById('yearSelect').value) || 2025;
-      var dataMap = { 2022: window.historicalData2022, 2023: window.historicalData2023, 2024: window.historicalData2024, 2025: window.historicalData2025 };
-      var latestData = dataMap[year] || window.historicalData2025;
-
-      var prefs = getPreferences();
-      var filteredData = applyPreferences(latestData, prefs);
-      var recommendations = window.calculateRecommendations(totalScore, selectedSubjects, filteredData, year);
-
-      var displayScore = document.getElementById('displayScore');
-      if (displayScore) document.getElementById('displayScore').textContent = totalScore;
-      var dc = document.getElementById('displayChinese');
-      if (dc) dc.textContent = chinese;
-      var dm = document.getElementById('displayMath');
-      if (dm) dm.textContent = math;
-      var de = document.getElementById('displayEnglish');
-      if (de) de.textContent = english;
-
-      var rs = document.getElementById('resultsSection');
-      if (rs) { rs.style.display = 'block'; rs.scrollIntoView({ behavior: 'smooth' }); }
-
-      window.renderRecommendations(recommendations);
-    };
+    // Wrap calculateRecommendations AFTER app.js loads (100ms delay)
+    setTimeout(function() {
+      var __origCR = window.calculateRecommendations;
+      if (!__origCR) return;
+      window.calculateRecommendations = function(score, subjects, data, year) {
+        var prefs = getPreferences();
+        if (prefs.level.length || prefs.region || prefs.type.length || prefs.tuition.length) {
+          var srcData = window._histData || data;
+          var yearKey = String(year);
+          var yearData = (srcData && srcData[yearKey]) ? srcData[yearKey] : data;
+          var filtered = applyPreferences(yearData, prefs);
+          return __origCR.call(window, score, subjects, filtered, year);
+        }
+        return __origCR.apply(window, arguments);
+      };
+    }, 150);
 
     // Wrap clearForm
     var __origCF = window.clearForm;
