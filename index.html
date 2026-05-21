@@ -234,6 +234,42 @@
       border-color: var(--primary);
     }
 
+    /* Preference Tags */
+    .pref-section-title {
+      font-size: 12px;
+      color: var(--text-light);
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+
+    .pref-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .pref-tag {
+      padding: 5px 12px;
+      border: 1.5px solid var(--border-light);
+      border-radius: 20px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: var(--transition);
+      background: var(--bg-white);
+      color: var(--text-medium);
+    }
+
+    .pref-tag:hover {
+      border-color: var(--primary-light);
+      color: var(--primary);
+    }
+
+    .pref-tag.selected {
+      background: var(--primary);
+      color: var(--white);
+      border-color: var(--primary);
+    }
+
     /* Primary Button */
     .btn-primary {
       padding: 14px 32px;
@@ -763,6 +799,59 @@
               <span class="subject-tag" data-subject="生物">生物</span>
               <span class="subject-tag" data-subject="地理">地理</span>
               <span class="subject-tag" data-subject="政治">政治</span>
+            </div>
+          </div>
+
+          <!-- 自定义偏好 -->
+          <div class="form-group">
+            <label class="form-label">📌 报考偏好（可多选，不选则不限）</label>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;">
+
+              <!-- 院校层次 -->
+              <div>
+                <div class="pref-section-title">院校层次</div>
+                <div class="pref-tags" id="prefLevel">
+                  <span class="pref-tag" data-value="985/211">985/211</span>
+                  <span class="pref-tag" data-value="一本">一本</span>
+                  <span class="pref-tag" data-value="二本">二本</span>
+                </div>
+              </div>
+
+              <!-- 地域偏好 -->
+              <div>
+                <div class="pref-section-title">地域偏好</div>
+                <div class="pref-tags" id="prefRegion">
+                  <span class="pref-tag" data-value="北京">北京</span>
+                  <span class="pref-tag" data-value="京外">京外</span>
+                  <span class="pref-tag" data-value="不限">不限</span>
+                </div>
+              </div>
+
+              <!-- 院校类型 -->
+              <div>
+                <div class="pref-section-title">院校类型</div>
+                <div class="pref-tags" id="prefType">
+                  <span class="pref-tag" data-value="综合">综合</span>
+                  <span class="pref-tag" data-value="理工">理工</span>
+                  <span class="pref-tag" data-value="师范">师范</span>
+                  <span class="pref-tag" data-value="医药">医药</span>
+                  <span class="pref-tag" data-value="农林">农林</span>
+                  <span class="pref-tag" data-value="语言">语言</span>
+                  <span class="pref-tag" data-value="财经">财经</span>
+                  <span class="pref-tag" data-value="政法">政法</span>
+                </div>
+              </div>
+
+              <!-- 学费接受度 -->
+              <div>
+                <div class="pref-section-title">学费接受度</div>
+                <div class="pref-tags" id="prefTuition">
+                  <span class="pref-tag" data-value="公办">公办（普通）</span>
+                  <span class="pref-tag" data-value="中外合作">中外合作</span>
+                  <span class="pref-tag" data-value="民办">民办</span>
+                </div>
+              </div>
+
             </div>
           </div>
 
