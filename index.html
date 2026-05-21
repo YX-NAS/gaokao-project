@@ -1067,5 +1067,163 @@
   </footer>
 
   <script src="src/app.js"></script>
+  <script>
+  (function() {
+    // --- Preference tag click handlers ---
+    document.querySelectorAll('.pref-tags').forEach(function(container) {
+      container.querySelectorAll('.pref-tag').forEach(function(tag) {
+        tag.addEventListener('click', function() {
+          var cat = container.dataset.category;
+          var val = this.dataset.value;
+          this.classList.toggle('selected');
+          // Mutual exclusion for region: 不限 vs 京外
+          if (cat === 'region' && val !== '不限') {
+            container.querySelectorAll('.pref-tag').forEach(function(t) {
+              if (t.dataset.value === '不限') t.classList.remove('selected');
+            });
+          }
+          if (cat === 'region' && val === '不限') {
+            container.querySelectorAll('.pref-tag').forEach(function(t) {
+              if (t.dataset.value !== '不限') t.classList.remove('selected');
+            });
+          }
+        });
+      });
+    });
+
+    // --- Get current preferences from UI ---
+    function getPreferences() {
+      var prefs = { level: [], region: '', type: [], tuition: [] };
+
+      document.querySelectorAll('#prefLevel .pref-tag.selected').forEach(function(t) { prefs.level.push(t.dataset.value); });
+      var reg = document.querySelector('#prefRegion .pref-tag.selected');
+      if (reg) prefs.region = reg.dataset.value;
+
+      document.querySelectorAll('#prefType .pref-tag.selected').forEach(function(t) { prefs.type.push(t.dataset.value); });
+      document.querySelectorAll('#prefTuition .pref-tag.selected').forEach(function(t) { prefs.tuition.push(t.dataset.value); });
+
+      return prefs;
+    }
+
+    // --- Preference filter function ---
+    function applyPreferences(data, prefs) {
+      if (!prefs.level.length && !prefs.region && !prefs.type.length && !prefs.tuition.length) {
+        return data; // No filter
+      }
+      var has = function(arr, v) { return arr.indexOf(v) !== -1; };
+      var schLevel = function(name) {
+        name = name || '';
+        if (name.indexOf('985') !== -1 || name.indexOf('211') !== -1) return '985/211';
+        return '';
+      };
+      var schType = function(name) {
+        name = name || '';
+        if (name.indexOf('理工') !== -1 || name.indexOf('工业') !== -1) return '理工';
+        if (name.indexOf('师范') !== -1) return '师范';
+        if (name.indexOf('医药') !== -1 || name.indexOf('医学') !== -1 || name.indexOf('中医药') !== -1) return '医药';
+        if (name.indexOf('农林') !== -1) return '农林';
+        if (name.indexOf('语言') !== -1 || name.indexOf('外国语') !== -1) return '语言';
+        if (name.indexOf('财经') !== -1 || name.indexOf('经贸') !== -1 || name.indexOf('工商') !== -1) return '财经';
+        if (name.indexOf('政法') !== -1 || name.indexOf('法律') !== -1) return '政法';
+        if (name.indexOf('综合') !== -1 || name.indexOf('大学') !== -1) return '综合';
+        return '综合';
+      };
+      var isBeijing = function(name) { name = name || ''; return name.indexOf('北京') !== -1; };
+      var schTuition = function(major) {
+        major = major || '';
+        if (major.indexOf('中外合作') !== -1 || major.indexOf('合作办学') !== -1 || major.indexOf('中外合办') !== -1) return '中外合作';
+        if (major.indexOf('民办') !== -1 || major.indexOf('独立学院') !== -1) return '民办';
+        return '公办';
+      };
+
+      return data.filter(function(item) {
+        var schoolName = item.school || '';
+        var majorGroup = item.majorGroup || '';
+
+        // Level filter
+        if (prefs.level.length) {
+          var is985211 = prefs.level.indexOf('985/211') !== -1 &&
+            (schoolName.indexOf('985') !== -1 || schoolName.indexOf('211') !== -1);
+          var isYiben = prefs.level.indexOf('一本') !== -1 &&
+            schLevel(schoolName) === '' && schoolName.indexOf('学院') === -1;
+          var isErben = prefs.level.indexOf('二本') !== -1 &&
+            schoolName.indexOf('学院') !== -1 && schLevel(schoolName) === '';
+          if (!is985211 && !isYiben && !isErben) return false;
+        }
+
+        // Region filter
+        if (prefs.region === '北京' && !isBeijing(schoolName)) return false;
+        if (prefs.region === '京外' && isBeijing(schoolName)) return false;
+
+        // Type filter
+        if (prefs.type.length) {
+          var t = schType(schoolName);
+          if (!has(prefs.type, t)) return false;
+        }
+
+        // Tuition filter
+        if (prefs.tuition.length) {
+          var tt = schTuition(majorGroup);
+          if (!has(prefs.tuition, tt)) return false;
+        }
+
+        return true;
+      });
+    }
+
+    // Wrap original calculateRecommendations
+    var __origCR = window.calculateRecommendations;
+    window.calculateRecommendations = function(score, subjects, data, year) {
+      var prefs = getPreferences();
+      var filteredData = applyPreferences(data, prefs);
+      return __origCR.call(window, score, subjects, filteredData, year);
+    };
+
+    // Also wrap generateRecommendation (needs filteredData ref for display)
+    var __origGR = window.generateRecommendation;
+    window.generateRecommendation = function() {
+      var score = parseInt(document.getElementById('scoreInput').value) || 0;
+      var chinese = parseInt(document.getElementById('chineseInput').value) || 0;
+      var math = parseInt(document.getElementById('mathInput').value) || 0;
+      var english = parseInt(document.getElementById('englishInput').value) || 0;
+      if (!score) { alert('请输入高考总分'); return; }
+      var totalScore = score;
+
+      var selectedSubjects = [];
+      document.querySelectorAll('.subject-tag.selected').forEach(function(t) {
+        selectedSubjects.push(t.dataset.subject);
+      });
+
+      var year = parseInt(document.getElementById('yearSelect').value) || 2025;
+      var dataMap = { 2022: window.historicalData2022, 2023: window.historicalData2023, 2024: window.historicalData2024, 2025: window.historicalData2025 };
+      var latestData = dataMap[year] || window.historicalData2025;
+
+      var prefs = getPreferences();
+      var filteredData = applyPreferences(latestData, prefs);
+      var recommendations = window.calculateRecommendations(totalScore, selectedSubjects, filteredData, year);
+
+      var displayScore = document.getElementById('displayScore');
+      if (displayScore) document.getElementById('displayScore').textContent = totalScore;
+      var dc = document.getElementById('displayChinese');
+      if (dc) dc.textContent = chinese;
+      var dm = document.getElementById('displayMath');
+      if (dm) dm.textContent = math;
+      var de = document.getElementById('displayEnglish');
+      if (de) de.textContent = english;
+
+      var rs = document.getElementById('resultsSection');
+      if (rs) { rs.style.display = 'block'; rs.scrollIntoView({ behavior: 'smooth' }); }
+
+      window.renderRecommendations(recommendations, totalScore, selectedSubjects);
+    };
+
+    // Wrap clearForm
+    var __origCF = window.clearForm;
+    window.clearForm = function() {
+      document.querySelectorAll('.pref-tag').forEach(function(t) { t.classList.remove('selected'); });
+      if (__origCF) __origCF.call(window);
+    };
+  })();
+  </script>
 </body>
 </html>
