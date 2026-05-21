@@ -57793,6 +57793,12 @@ let selectedVolunteers = [];
 // 选中的选考科目
 let selectedSubjects = [];
 
+// ==================== 报考偏好状态 ====================
+let prefLevel = [];      // 院校层次偏好
+let prefRegion = [];     // 地域偏好
+let prefType = [];       // 院校类型偏好
+let prefTuition = [];    // 学费接受度
+
 // ==================== 页面导航 ====================
 
 function showPage(pageId) {
@@ -57836,12 +57842,60 @@ document.querySelectorAll('.subject-tag').forEach(tag => {
   });
 });
 
+// ==================== 报考偏好选择 ====================
+function initPrefTags() {
+  document.querySelectorAll('.pref-tags').forEach(container => {
+    const prefId = container.id;
+    const stateMap = {
+      'prefLevel': prefLevel,
+      'prefRegion': prefRegion,
+      'prefType': prefType,
+      'prefTuition': prefTuition
+    };
+
+    container.querySelectorAll('.pref-tag').forEach(tag => {
+      tag.addEventListener('click', () => {
+        const value = tag.dataset.value;
+        const state = stateMap[prefId];
+
+        if (tag.classList.contains('selected')) {
+          tag.classList.remove('selected');
+          state.splice(state.indexOf(value), 1);
+        } else {
+          if (prefId === 'prefRegion' && (value === '京外' || value === '不限')) {
+            container.querySelectorAll('.pref-tag').forEach(t => {
+              if (t.dataset.value === '京外' || t.dataset.value === '不限') {
+                t.classList.remove('selected');
+              }
+            });
+            prefRegion = prefRegion.filter(v => v !== '京外' && v !== '不限');
+            if (value !== '不限') {
+              tag.classList.add('selected');
+              state.push(value);
+            }
+          } else {
+            tag.classList.add('selected');
+            state.push(value);
+          }
+        }
+      });
+    });
+  });
+}
+initPrefTags();
+
 // ==================== 清空表单 ====================
 
 function clearForm() {
   document.getElementById('scoreForm').reset();
   document.querySelectorAll('.subject-tag').forEach(t => t.classList.remove('selected'));
   selectedSubjects = [];
+  // 清空偏好
+  document.querySelectorAll('.pref-tag').forEach(t => t.classList.remove('selected'));
+  prefLevel = [];
+  prefRegion = [];
+  prefType = [];
+  prefTuition = [];
   document.getElementById('resultsSection').style.display = 'none';
 }
 
@@ -57872,8 +57926,16 @@ function generateRecommendation() {
   const latestData = historicalData[dataYear];
   console.log('使用' + dataYear + '年数据进行推荐，共' + (latestData?.length || 0) + '条记录');
   
+  // 构建偏好条件
+  const preferences = {
+    level: prefLevel.length > 0 ? prefLevel : null,
+    region: prefRegion.length > 0 ? prefRegion : null,
+    type: prefType.length > 0 ? prefType : null,
+    tuition: prefTuition.length > 0 ? prefTuition : null
+  };
+
   // 计算推荐
-  const recommendations = calculateRecommendations(totalScore, selectedSubjects, latestData, dataYear);
+  const recommendations = calculateRecommendations(totalScore, selectedSubjects, latestData, dataYear, preferences);
   
   // 渲染结果
   renderRecommendations(recommendations);
@@ -57890,11 +57952,73 @@ function getRank(score, year) {
   return scores.length > 0 ? segments[scores[scores.length - 1]] : null;
 }
 
-function calculateRecommendations(score, subjects, data, year) {
+function calculateRecommendations(score, subjects, data, year, preferences) {
   const studentRank = getRank(score, year);
   const chong = [];  // 冲
   const wen = [];    // 稳
   const bao = [];    // 保
+
+  // 偏好过滤函数
+  function matchPreferences(school) {
+    const { level, region, type, tuition } = preferences || {};
+
+    // 院校层次过滤
+    if (level && level.length > 0) {
+      if (!level.includes(school.level)) return false;
+    }
+
+    // 地域过滤（北京/京外）
+    if (region && region.length > 0) {
+      const isBeijingSchool = school.school.includes('北京') || school.code.startsWith('11');
+      if (region.includes('北京') && !isBeijingSchool) return false;
+      if (region.includes('京外') && isBeijingSchool) return false;
+    }
+
+    // 院校类型过滤（从校名推断）
+    if (type && type.length > 0) {
+      const name = school.school;
+      const inferredType = [];
+      if (/医|药|卫生|中医药/.test(name)) inferredType.push('医药');
+      if (/师范/.test(name)) inferredType.push('师范');
+      if (/农业|林业|农林/.test(name)) inferredType.push('农林');
+      if (/语言|外语|外交/.test(name)) inferredType.push('语言');
+      if (/财经|经贸|经济/.test(name)) inferredType.push('财经');
+      if (/政法|公安|警察|司法/.test(name)) inferredType.push('政法');
+      if (/理工|工业|科技|工程|航空|航天|机电|信息|电子|自动化/.test(name)) inferredType.push('理工');
+      if (/民族|地质|矿业|石油|化工|交通|建筑|水利|体育|艺术|音乐|美术/.test(name)) {} // 有自己的分类，不归入综合
+      if (inferredType.length === 0) inferredType.push('综合');
+
+      if (!type.some(t => inferredType.includes(t))) return false;
+    }
+
+    // 学费过滤（通过院校名称/代码/备注中的关键字判断）
+    if (tuition && tuition.length > 0) {
+      const schoolText = (school.school + (school.remark || '')).toLowerCase();
+      const acceptPublic = tuition.includes('公办');
+      const acceptCooperation = tuition.includes('中外合作');
+      const acceptPrivate = tuition.includes('民办');
+
+      // 中外合作院校（常见关键词）
+      const isCooperation = schoolText.includes('中外合作') || schoolText.includes('合作办学') ||
+                            schoolText.includes('宁波诺丁汉') || schoolText.includes('西交利物浦') ||
+                            schoolText.includes('昆山杜克') || schoolText.includes('上海纽约') ||
+                            schoolText.includes('温州肯恩') || schoolText.includes('北师浸会') ||
+                            schoolText.includes('UIC') || schoolText.includes('港中深');
+      const isPrivate = schoolText.includes('民办') || schoolText.includes('私立');
+
+      if (isCooperation && !acceptCooperation) return false;
+      if (isPrivate && !acceptPrivate && !isCooperation) {
+        // 非合作民办学校
+        if (!acceptPrivate) return false;
+      }
+      if (!isCooperation && !isPrivate && !acceptPublic) {
+        // 普通公办
+        if (!acceptPublic) return false;
+      }
+    }
+
+    return true;
+  }
 
   data.forEach(school => {
     // 检查选科要求是否满足
@@ -57902,6 +58026,9 @@ function calculateRecommendations(score, subjects, data, year) {
       const hasRequired = school.subjects.every(s => subjects.includes(s));
       if (!hasRequired) return;
     }
+
+    // 偏好过滤
+    if (!matchPreferences(school)) return;
 
     // 用位次判断（更精准）
     const schoolRank = getRank(school.minScore, year);
